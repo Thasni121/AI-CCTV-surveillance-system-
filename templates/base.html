@@ -1,0 +1,280 @@
+```html
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{{ title or "AI CCTV Surveillance" }}</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<header>
+    <div class="brand">◉ AI CCTV Surveillance</div>
+
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/events">Events &amp; Evidence</a>
+        <a href="/settings">Settings</a>
+    </nav>
+</header>
+
+<main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+</main>
+
+<footer>
+    Local prototype · Review privacy, accuracy, retention and authorization
+    before operational deployment.
+</footer>
+
+<div style="position:fixed;right:18px;bottom:18px;z-index:999;">
+    <button id="soundToggle" type="button">
+        Enable sound alerts
+    </button>
+    <span id="soundState" class="muted">Sound disabled</span>
+</div>
+
+<script>
+(() => {
+    const STORAGE_KEY = "cctvSoundEnabled";
+
+    let soundEnabled =
+        localStorage.getItem(STORAGE_KEY) === "true";
+
+    let audioCtx = null;
+    let knownIds = null;
+    let polling = false;
+
+    const btn = document.getElementById("soundToggle");
+    const state = document.getElementById("soundState");
+
+    function updateButton() {
+        btn.textContent = soundEnabled
+            ? "Disable sound alerts"
+            : "Enable sound alerts";
+
+        if (!soundEnabled) {
+            state.textContent = "Sound disabled";
+        }
+    }
+
+    async function prepareAudio() {
+        const AudioContextClass =
+            window.AudioContext || window.webkitAudioContext;
+
+        if (!AudioContextClass) {
+            throw new Error("Web Audio is not supported");
+        }
+
+        if (!audioCtx) {
+            audioCtx = new AudioContextClass();
+        }
+
+        if (audioCtx.state !== "running") {
+            await audioCtx.resume();
+        }
+
+        if (audioCtx.state !== "running") {
+            throw new Error("Audio is blocked by the browser");
+        }
+    }
+
+    async function beep() {
+        if (!soundEnabled) return;
+
+        try {
+            await prepareAudio();
+
+            const now = audioCtx.currentTime;
+
+            function tone(frequency, start, duration) {
+                const oscillator = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                oscillator.type = "sine";
+                oscillator.frequency.value = frequency;
+
+                gain.gain.setValueAtTime(0.001, start);
+                gain.gain.exponentialRampToValueAtTime(
+                    0.18, start + 0.025
+                );
+                gain.gain.exponentialRampToValueAtTime(
+                    0.001, start + duration
+                );
+
+                oscillator.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                oscillator.start(start);
+                oscillator.stop(start + duration + 0.03);
+            }
+
+            tone(880, now, 0.22);
+            tone(660, now + 0.28, 0.25);
+
+        } catch (error) {
+            state.textContent =
+                "Sound blocked — click Enable sound alerts";
+
+            console.error("Sound alert error:", error);
+        }
+    }
+
+    btn.addEventListener("click", async () => {
+        if (soundEnabled) {
+            soundEnabled = false;
+
+            localStorage.setItem(STORAGE_KEY, "false");
+
+            updateButton();
+            return;
+        }
+
+        try {
+            await prepareAudio();
+
+            soundEnabled = true;
+
+            localStorage.setItem(STORAGE_KEY, "true");
+
+            updateButton();
+            state.textContent = "Sound enabled · Test sound";
+
+            // Reset alert tracking so existing HIGH/CRITICAL
+            // alerts can be checked after sound is enabled.
+            knownIds = null;
+
+            await beep();
+            await pollAlerts();
+
+        } catch (error) {
+            soundEnabled = false;
+
+            localStorage.setItem(STORAGE_KEY, "false");
+
+            updateButton();
+            state.textContent =
+                "Sound blocked — check browser permissions";
+
+            console.error("Could not enable sound:", error);
+        }
+    });
+
+    async function pollAlerts() {
+        if (polling) return;
+
+        polling = true;
+
+        try {
+            const response = await fetch("/api/alerts", {
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                throw new Error(
+                    "Alerts API returned " + response.status
+                );
+            }
+
+            const alerts = await response.json();
+
+            if (!Array.isArray(alerts)) {
+                throw new Error("Alerts API must return a JSON array");
+            }
+
+            const eligible = alerts.filter(alert => {
+                const severity =
+                    String(alert.severity || "").toUpperCase();
+
+                return severity === "HIGH" ||
+                       severity === "CRITICAL";
+            });
+
+            const ids = eligible.map(alert =>
+                String(
+                    alert.alert_id ??
+                    alert.id ??
+                    [
+                        alert.job_id ?? "",
+                        alert.frame ?? "",
+                        alert.event_type ?? alert.type ?? "",
+                        alert.track_id ?? "",
+                        alert.timestamp ?? ""
+                    ].join("-")
+                )
+            );
+
+            const currentIds = new Set(ids);
+
+            // On the first check, remember existing alerts without
+            // repeatedly sounding for old events.
+            if (knownIds === null) {
+                knownIds = currentIds;
+                return;
+            }
+
+            const hasNewAlert = ids.some(id => !knownIds.has(id));
+
+            knownIds = currentIds;
+
+            if (hasNewAlert && soundEnabled) {
+                state.textContent =
+                    "HIGH/CRITICAL alert detected";
+
+                await beep();
+            }
+
+        } catch (error) {
+            console.error("Alert polling failed:", error);
+
+            if (soundEnabled) {
+                state.textContent =
+                    "Sound enabled · Alert API unavailable";
+            }
+        } finally {
+            polling = false;
+        }
+    }
+
+    // Restore the saved preference after page navigation.
+    updateButton();
+
+    if (soundEnabled) {
+        state.textContent =
+            "Sound preference restored · Checking audio";
+
+        // Some browsers require a fresh click after navigation.
+        prepareAudio()
+            .then(() => {
+                state.textContent = "Sound enabled";
+            })
+            .catch(() => {
+                state.textContent =
+                    "Sound enabled · Click once if blocked";
+            });
+    }
+
+    pollAlerts();
+
+    window.setInterval(pollAlerts, 2000);
+})();
+</script>
+
+</body>
+</html>
+```

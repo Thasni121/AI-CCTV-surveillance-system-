@@ -1,0 +1,27 @@
+
+{% extends "base.html" %}{% block content %}<section class="hero"><div><p class="eyebrow">SYSTEM CONFIGURATION</p><h1>Processing settings</h1><p>Settings apply to videos submitted after saving.</p></div></section>
+<section class="panel"><form method="post" class="settingsform">
+<label>Detection confidence threshold <strong>{{config.confidence}}</strong><input type="number" name="confidence" min="0.05" max="0.99" step="0.01" value="{{config.confidence}}" required></label>
+<label>Frame stride <span class="muted">Process every Nth frame (1 = all frames)</span><input type="number" name="frame_stride" min="1" max="30" value="{{config.frame_stride}}" required></label>
+<label>Evidence snapshot interval (seconds)<input type="number" name="snapshot_interval_sec" min="0.5" max="60" step="0.5" value="{{config.snapshot_interval_sec}}" required></label>
+<label>YOLO model file<input value="{{config.model_name}}" disabled><span class="muted">Change model_name in config.json to use another compatible Ultralytics model.</span></label>
+<label class="check"><input type="checkbox" name="enable_low_light" {% if config.enable_low_light %}checked{% endif %}> Enable CLAHE low-light enhancement</label>
+<label class="check"><input type="checkbox" name="enable_vehicle_ocr" {% if config.enable_vehicle_ocr %}checked{% endif %}> Enable plate OCR integration flag (not automatic plate detection)</label>
+<hr><h2>Intelligent alert rules</h2>
+<label class="check"><input type="checkbox" name="restricted_zone_enabled" {% if config.restricted_zone_enabled %}checked{% endif %}> Enable restricted-zone intrusion detection</label>
+<p class="muted">Zone coordinates are ratios from 0.0 to 1.0 (left/top to right/bottom). Defaults mark a rectangle on the right side of the video.</p>
+<div class="grid">
+<label>Zone X1 (left)<input type="number" name="zone_x1_ratio" min="0" max="1" step="0.01" value="{{config.zone_x1_ratio}}" required></label>
+<label>Zone Y1 (top)<input type="number" name="zone_y1_ratio" min="0" max="1" step="0.01" value="{{config.zone_y1_ratio}}" required></label>
+<label>Zone X2 (right)<input type="number" name="zone_x2_ratio" min="0" max="1" step="0.01" value="{{config.zone_x2_ratio}}" required></label>
+<label>Zone Y2 (bottom)<input type="number" name="zone_y2_ratio" min="0" max="1" step="0.01" value="{{config.zone_y2_ratio}}" required></label>
+</div>
+<label>Loitering threshold (seconds)<input type="number" name="loitering_threshold_sec" min="3" max="3600" step="1" value="{{config.loitering_threshold_sec}}" required></label>
+<h2>External notifications</h2>
+<label class="check"><input type="checkbox" name="enable_email_alerts" {% if config.enable_email_alerts %}checked{% endif %}> Send email for HIGH / CRITICAL alerts</label>
+<label class="check"><input type="checkbox" name="enable_sms_alerts" {% if config.enable_sms_alerts %}checked{% endif %}> Send SMS for HIGH / CRITICAL alerts (Twilio)</label>
+<button type="submit">Save settings</button></form></section>
+<section class="panel"><h2>Integration setup & severity</h2>
+<p><strong>CRITICAL:</strong> restricted-zone intrusion · <strong>HIGH:</strong> loitering/crowd threshold · <strong>MEDIUM:</strong> line crossing · <strong>LOW:</strong> ordinary detections.</p>
+<p>For email, configure environment variables <code>CCTV_SMTP_HOST</code>, <code>CCTV_SMTP_PORT</code>, <code>CCTV_SMTP_USER</code>, <code>CCTV_SMTP_PASSWORD</code>, <code>CCTV_ALERT_EMAIL_TO</code> and optionally <code>CCTV_ALERT_EMAIL_FROM</code>. For SMS configure <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_FROM_NUMBER</code> and <code>CCTV_ALERT_SMS_TO</code>. Never put credentials in config.json or source code.</p>
+<p>Sound alerts play in the browser when the dashboard is open; click “Enable sound alerts” once because browsers restrict autoplay. Email/SMS only work after valid provider credentials and settings are configured.</p><p>Set <code>FR_API_KEY</code> and configure the official Face Recognition API URL only if authorized. RTSP source entries remain a framework; continuous multi-camera streaming is not implemented in this upload-processing prototype.</p></section>{% endblock %}

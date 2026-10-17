@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="textlink" href="/">← Dashboard</a>
+<section class="panel jobpanel">
+  <p class="eyebrow">PROCESSING JOB</p>
+  <h1>{{ job.name }}</h1>
+  <p>Job ID: <code>{{ job.id }}</code></p>
+  <div id="jobstate" class="jobstate">{{ job.status }}</div>
+  {% if job.error %}<div class="flash error">{{ job.error }}</div>{% endif %}
+  {% if job.result %}
+    <h2>Results</h2>
+    <div class="stats">
+      <div class="stat"><span>Frames processed</span><strong>{{ job.result.processed_frames }}</strong></div>
+      <div class="stat"><span>Approx. track IDs</span><strong>{{ job.result.approx_unique_track_ids }}</strong></div>
+      <div class="stat"><span>Vehicle detections</span><strong>{{ job.result.vehicle_detections_per_frame_sum }}</strong></div>
+      <div class="stat"><span>Person detections</span><strong>{{ job.result.person_detections_per_frame_sum }}</strong></div>
+    </div>
+    <h2>Annotated output video</h2>
+    <video controls preload="metadata" style="width:100%;max-height:620px;background:#000;border-radius:12px"
+      src="{{ url_for('output_file', filename=job.result.output) }}">
+      Your browser cannot play this video. Use the download link below.
+    </video>
+    <p><a class="buttonlink" href="{{ url_for('output_file', filename=job.result.output) }}" download>Download annotated video</a></p>
+    <h3>Class detection counts</h3>
+    <pre>{{ job.result.class_detections_per_frame_sum | tojson(indent=2) }}</pre>
+    <p class="muted">{{ job.result.note }}</p>
+    <h2>Evidence images ({{ job.result.evidence_files|length }})</h2>
+    {% if job.result.evidence_files %}
+      <div class="evidence-grid">
+      {% for image in job.result.evidence_files %}
+        <a class="evidence-card" href="{{ url_for('evidence_file', filename=image) }}" target="_blank">
+          <img src="{{ url_for('evidence_file', filename=image) }}" alt="Detection evidence" loading="lazy">
+          <span>{{ image }}</span>
+        </a>
+      {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No evidence crops were saved for this job.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">This page refreshes while processing.</p>
+  {% endif %}
+</section>
+<style>
+.evidence-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-top:16px}
+.evidence-card{display:block;background:#0c1426;border:1px solid #263550;border-radius:10px;overflow:hidden;color:#e9efff}
+.evidence-card img{display:block;width:100%;height:140px;object-fit:cover}
+.evidence-card span{display:block;padding:8px;font-size:11px;overflow-wrap:anywhere}
+video{display:block}
+</style>
+<script>
+async function refreshJob(){
+  try{
+    const r=await fetch("/api/job/{{ job.id }}");
+    const j=await r.json();
+    const el=document.getElementById("jobstate");
+    el.textContent=j.status;
+    if(j.status==="processing"||j.status==="queued"){setTimeout(()=>location.reload(),5000)}
+    else if(j.status==="completed"||j.status==="failed"){location.reload()}
+  }catch(e){}
+}
+{% if job.status in ["queued","processing"] %}setTimeout(refreshJob,5000);{% endif %}
+</script>
+{% endblock %}
